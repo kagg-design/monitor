@@ -329,6 +329,10 @@ class Monitor {
 			return;
 		}
 
+		if ( preg_match( '/^.*(@.+$)|(\.(jpg|png|jpeg)$)/i', $url ) ) {
+			return;
+		}
+
 		if ( ! in_array( $url, $this->links, true ) ) {
 			$this->links[] = $url;
 		}
@@ -342,10 +346,6 @@ class Monitor {
 	 * @return string
 	 */
 	private function normalize_link( $url ) {
-		if ( false !== strpos( $url, '@' ) ) {
-			return $url;
-		}
-
 		$url_arr = parse_url( $url );
 
 		$scheme = isset( $url_arr['scheme'] ) ? $url_arr['scheme'] : parse_url( $this->site_url, PHP_URL_SCHEME );
@@ -361,6 +361,7 @@ class Monitor {
 		}
 
 		$path = isset( $url_arr['path'] ) ? $url_arr['path'] : '';
+		$path = rtrim( $path, '/\\' );
 		$url  = $url . $path;
 
 		if ( isset( $url_arr['query'] ) ) {
