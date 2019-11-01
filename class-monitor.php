@@ -61,8 +61,7 @@ class Monitor {
 	 *
 	 * @var string
 	 */
-	private $to = 'info@kagg.eu';
-//	private $to = 'denis.swsgrp@gmail.com, churkin.andrei@mail.ru, info@kagg.eu';
+	private $to = 'denis.swsgrp@gmail.com, churkin.andrei@mail.ru, info@kagg.eu';
 
 	/**
 	 * Email error level.
