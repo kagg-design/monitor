@@ -5,10 +5,30 @@
  * @package kagg-monitor
  */
 
+/**
+ * Log level log.
+ */
 define( 'KM_LOG', 0 );
+
+/**
+ * Log level info.
+ */
 define( 'KM_INFO', 1 );
+
+/**
+ * Log level warning.
+ */
 define( 'KM_WARNING', 2 );
+
+/**
+ * Log level error.
+ */
 define( 'KM_ERROR', 3 );
+
+/**
+ * Debug mode.
+ */
+define( 'KM_DEBUG' , true );
 
 /**
  * Class Monitor
@@ -62,6 +82,13 @@ class Monitor {
 	 * @var string
 	 */
 	private $to = 'denis.swsgrp@gmail.com, churkin.andrei@mail.ru, info@kagg.eu';
+
+	/**
+	 * To email address in debug mode.
+	 *
+	 * @var string
+	 */
+	private $to_debug = 'info@kagg.eu';
 
 	/**
 	 * Email error level.
@@ -241,6 +268,10 @@ class Monitor {
 
 		$headers .= 'Content-Type: text/html; charset=UTF-8' . "\r\n";
 		$headers .= 'From: ' . $this->from . "\r\n";
+
+		if ( KM_DEBUG ) {
+			$this->to = $this->to_debug;
+		}
 
 		mail( $this->to, 'Report on ' . $this->site_url . ' monitoring.', $message, $headers );
 	}
