@@ -28,7 +28,7 @@ define( 'KM_ERROR', 3 );
 /**
  * Debug mode.
  */
-define( 'KM_DEBUG' , true );
+define( 'KM_DEBUG', false );
 
 /**
  * Class Monitor
