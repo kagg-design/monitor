@@ -290,10 +290,13 @@ class Monitor {
 
 		$time_start = microtime( true );
 
-		$html = $this->file_get_html( $url );
+		// Offset must be 0 with php 7.2.
+		$contents = file_get_contents( $url, false, null, 0 );
 
 		$time_end = microtime( true );
 		$time     = $time_end - $time_start;
+
+		$html = str_get_html( $contents );
 
 		if ( $html ) {
 			$title_node = $html->find( 'title', 0 );
@@ -331,20 +334,6 @@ class Monitor {
 		} else {
 			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
 		}
-
-		return $html;
-	}
-
-	/**
-	 * Get file html.
-	 *
-	 * @param string $url Url.
-	 *
-	 * @return bool|simple_html_dom
-	 */
-	private function file_get_html( $url ) {
-		// Offset must be 0 with php 7.2.
-		$html = file_get_html( $url, false, null, 0 );
 
 		return $html;
 	}
