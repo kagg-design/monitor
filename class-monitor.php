@@ -6,34 +6,40 @@
  */
 
 /**
- * Log level log.
- */
-define( 'KM_LOG', 0 );
-
-/**
- * Log level info.
- */
-define( 'KM_INFO', 1 );
-
-/**
- * Log level warning.
- */
-define( 'KM_WARNING', 2 );
-
-/**
- * Log level error.
- */
-define( 'KM_ERROR', 3 );
-
-/**
- * Debug mode.
- */
-define( 'KM_DEBUG', false );
-
-/**
  * Class Monitor
  */
 class Monitor {
+
+	/**
+	 * Log level log.
+	 */
+	const KM_LOG = 0;
+
+	/**
+	 * Log level info.
+	 */
+	const KM_INFO = 1;
+
+	/**
+	 * Log level warning.
+	 */
+	const KM_WARNING = 2;
+
+	/**
+	 * Log level error.
+	 */
+	const KM_ERROR = 3;
+
+	/**
+	 * Debug mode.
+	 */
+	const KM_DEBUG = false;
+
+	/**
+	 * Maximum allowed page loading time in seconds.
+	 */
+	const MAX_LOAD_TIME = 1;
+
 	/**
 	 * Start time.
 	 *
@@ -95,7 +101,7 @@ class Monitor {
 	 *
 	 * @var int
 	 */
-	private $email_level = KM_INFO;
+	private $email_level = self::KM_INFO;
 
 	/**
 	 * Collected links.
@@ -126,6 +132,24 @@ class Monitor {
 	private $base_link_file_name = __DIR__ . '/base_links.txt';
 
 	/**
+	 * Required http headers.
+	 *
+	 * @var array
+	 */
+	private $required_headers = [
+		'X-Cache-File-Exists: exists',
+	];
+
+	/**
+	 * Required elements on relevant pages.
+	 *
+	 * @var array
+	 */
+	private $required_elements = [
+		'about_company' => '#sbi_load',
+	];
+
+	/**
 	 * Monitor constructor.
 	 */
 	public function __construct() {
@@ -135,24 +159,23 @@ class Monitor {
 
 		if ( 'cli' !== php_sapi_name() ) {
 			if ( '87.110.237.209' !== $this->get_user_ip() ) {
-				$this->log( 'Not allowed.', KM_ERROR );
+				$this->log( 'Not allowed.', self::KM_ERROR );
 				die();
 			}
 		}
 
 		$this->log( 'Starting checks.' );
 
-		$this->make_checks();
 		$this->walk_links();
 
-		$this->log( 'There are ' . count( $this->links ) . ' links on site.', KM_INFO );
-		$this->log( 'There are ' . count( $this->visited ) . ' visited.', KM_INFO );
+		$this->log( 'There are ' . count( $this->links ) . ' links on site.', self::KM_INFO );
+		$this->log( 'There are ' . count( $this->visited ) . ' visited.', self::KM_INFO );
 
 		$diff = array_diff( $this->links, $this->visited );
 		if ( 0 < count( $diff ) ) {
-			$this->log( 'Not visited:', KM_INFO );
+			$this->log( 'Not visited:', self::KM_INFO );
 			foreach ( $diff as $item ) {
-				$this->log( $item, KM_ERROR );
+				$this->log( $item, self::KM_ERROR );
 			}
 		}
 
@@ -169,7 +192,7 @@ class Monitor {
 		$this->time_end = microtime( true );
 
 		$time = $this->time_end - $this->time_start;
-		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', KM_INFO );
+		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', self::KM_INFO );
 		$this->log( 'Finished.' );
 
 		$this->send_email();
@@ -181,8 +204,8 @@ class Monitor {
 	 * @param string $message Message.
 	 * @param int    $level   Error level.
 	 */
-	private function log( $message, $level = KM_LOG ) {
-		if ( KM_ERROR === $level ) {
+	private function log( $message, $level = self::KM_LOG ) {
+		if ( self::KM_ERROR === $level ) {
 			$message = '*** ' . $message . ' ***';
 		}
 		$message .= "\n";
@@ -269,7 +292,7 @@ class Monitor {
 		$headers .= 'Content-Type: text/html; charset=UTF-8' . "\r\n";
 		$headers .= 'From: ' . $this->from . "\r\n";
 
-		if ( KM_DEBUG ) {
+		if ( self::KM_DEBUG ) {
 			$this->to = $this->to_debug;
 		}
 
@@ -312,15 +335,12 @@ class Monitor {
 			);
 
 			if ( 0 === strpos( $url, $this->site_url ) ) {
-				if ( 1 < $time ) {
-					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
+				if ( self::MAX_LOAD_TIME < $time ) {
+					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', self::KM_WARNING );
 				}
 
 				$a_items = $html->find( 'a' );
 				foreach ( $a_items as $a_item ) {
-					if ( 0 === strpos( $a_item->href, 'http://swsgroup' ) ) {
-						$this->log( 'Unexpected link ' . $a_item->href . ' on page ' . urldecode( $url ), KM_WARNING );
-					}
 					/**
 					 * DOM html node.
 					 *
@@ -328,14 +348,47 @@ class Monitor {
 					 */
 					$this->add_link( $this->normalize_link( $a_item->href ) );
 				}
+
+				$this->check_headers( $url, $http_response_header );
+				$this->check_required_elements( $url, $html );
 			}
 
 			$this->add_visited( $url );
 		} else {
-			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
+			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', self::KM_ERROR );
 		}
 
 		return $html;
+	}
+
+	/**
+	 * Check http headers.
+	 *
+	 * @param string $url     Page url.
+	 * @param array  $headers Http headers.
+	 */
+	private function check_headers( $url, $headers ) {
+		if ( array_intersect( $this->required_headers, $headers ) !== $this->required_headers ) {
+			$this->log( 'Page ' . urldecode( $url ) . ' does not contain required headers.', self::KM_WARNING );
+		}
+	}
+
+	/**
+	 * Check required element on the page.
+	 *
+	 * @param string          $url  Page url.
+	 * @param simple_html_dom $html HTML DOM.
+	 */
+	private function check_required_elements( $url, $html ) {
+		foreach ( $this->required_elements as $key => $required_element ) {
+			if ( ! preg_match( '|' . $key . '|', $url ) ) {
+				continue;
+			}
+
+			if ( ! $html->find( $required_element ) ) {
+				$this->log( 'Page ' . urldecode( $url ) . ' does not contain required element "' . esc_html( $required_element ) . '".', self::KM_ERROR );
+			}
+		}
 	}
 
 	/**
@@ -406,38 +459,12 @@ class Monitor {
 	}
 
 	/**
-	 * Make all checks.
-	 */
-	private function make_checks() {
-		$this->check_pages( $this->site_url );
-	}
-
-	/**
-	 * Check pages.
-	 *
-	 * @param string $url Url.
-	 */
-	private function check_pages( $url ) {
-		// Load start page.
-		$html = $this->get_html( $url );
-
-		// Load pages from menu.
-		$this->log( 'Checking pages in menu...' );
-		$menu_items = $html->find( '.mainmenu li a' );
-		foreach ( $menu_items as $menu_item ) {
-			/**
-			 * DOM html node.
-			 *
-			 * @var simple_html_dom_node $href
-			 */
-			$this->get_html( $menu_item->href );
-		}
-	}
-
-	/**
 	 * Walk all links.
 	 */
 	private function walk_links() {
+		// Load start page.
+		$this->get_html( $this->site_url );
+
 		foreach ( $this->links as &$url ) {
 			if ( ! in_array( $url, $this->visited, true ) ) {
 				$this->get_html( $url );
