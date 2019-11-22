@@ -31,14 +31,14 @@ class Monitor {
 	const KM_ERROR = 3;
 
 	/**
-	 * Debug mode.
-	 */
-	const KM_DEBUG = false;
-
-	/**
 	 * Maximum allowed page loading time in seconds.
 	 */
 	const MAX_LOAD_TIME = 1;
+
+	/**
+	 * Debug mode.
+	 */
+	const KM_DEBUG = false;
 
 	/**
 	 * Start time.
@@ -132,6 +132,13 @@ class Monitor {
 	private $base_link_file_name = __DIR__ . '/base_links.txt';
 
 	/**
+	 * File containing base links exists.
+	 *
+	 * @var bool
+	 */
+	private $base_link_file_exists = false;
+
+	/**
 	 * Required http headers.
 	 *
 	 * @var array
@@ -168,6 +175,7 @@ class Monitor {
 
 		$this->walk_links();
 
+		$this->log( '', self::KM_INFO );
 		$this->log( 'There are ' . count( $this->links ) . ' links on site.', self::KM_INFO );
 		$this->log( 'There are ' . count( $this->visited ) . ' visited.', self::KM_INFO );
 
@@ -335,10 +343,6 @@ class Monitor {
 			);
 
 			if ( 0 === strpos( $url, $this->site_url ) ) {
-				if ( self::MAX_LOAD_TIME < $time ) {
-					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', self::KM_WARNING );
-				}
-
 				$a_items = $html->find( 'a' );
 				foreach ( $a_items as $a_item ) {
 					/**
@@ -346,11 +350,22 @@ class Monitor {
 					 *
 					 * @var simple_html_dom_node $a_item
 					 */
+					if ( isset( $a_item->rel ) && 'nofollow' === $a_item->rel ) {
+						continue;
+					}
+
 					$this->add_link( $this->normalize_link( $a_item->href ) );
 				}
 
 				$this->check_headers( $url, $http_response_header );
 				$this->check_required_elements( $url, $html );
+
+				if ( self::MAX_LOAD_TIME < $time ) {
+					$this->log(
+						'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.',
+						self::KM_WARNING
+					);
+				}
 			}
 
 			$this->add_visited( $url );
@@ -369,7 +384,7 @@ class Monitor {
 	 */
 	private function check_headers( $url, $headers ) {
 		if ( array_intersect( $this->required_headers, $headers ) !== $this->required_headers ) {
-			$this->log( 'Page ' . urldecode( $url ) . ' does not contain required headers.', self::KM_WARNING );
+			$this->log( 'Page ' . urldecode( $url ) . ' does not contain required headers.' );
 		}
 	}
 
@@ -462,6 +477,8 @@ class Monitor {
 	 * Walk all links.
 	 */
 	private function walk_links() {
+		$this->site_url = rtrim( $this->site_url, '/\\' );
+
 		// Load start page.
 		$this->get_html( $this->site_url );
 
@@ -476,7 +493,9 @@ class Monitor {
 	 * Maybe create base link file.
 	 */
 	private function maybe_create_base_link_file() {
-		if ( ! file_exists( $this->base_link_file_name ) ) {
+		if ( file_exists( $this->base_link_file_name ) ) {
+			$this->base_link_file_exists = true;
+		} else {
 			foreach ( $this->links as $link ) {
 				file_put_contents( $this->base_link_file_name, $link . "\n", FILE_APPEND );
 			}
@@ -484,10 +503,10 @@ class Monitor {
 	}
 
 	/**
-	 * Get link differences.
+	 * Get link differences and print them in console.
 	 */
 	private function diff_links() {
-		if ( ! file_exists( $this->base_link_file_name ) ) {
+		if ( ! $this->base_link_file_exists ) {
 			$this->diffs = [];
 
 			return;
@@ -510,7 +529,7 @@ class Monitor {
 		}
 		$this->diffs = $new_diffs;
 
-		if ( ! empty( $this->diffs ) ) {
+		if ( ! empty( $this->diffs ) && 'cli' === $this->sapi_name ) {
 			echo Diff::toString( $this->diffs );
 		}
 	}
