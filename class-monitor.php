@@ -14,6 +14,49 @@ define( 'KM_ERROR', 3 );
  * Class Monitor
  */
 class Monitor {
+
+	/**
+	 * Site url.
+	 *
+	 * @var string
+	 */
+	private $site_url = 'https://swsgroup.ru';
+
+	/**
+	 * From email address.
+	 *
+	 * @var string
+	 */
+	private $from = 'info@kagg.eu';
+
+	/**
+	 * To email address.
+	 *
+	 * @var string
+	 */
+	private $to = 'info@kagg.eu';
+
+	/**
+	 * Email error level.
+	 *
+	 * @var int
+	 */
+	private $email_level = KM_INFO;
+
+	/**
+	 * Filename containing base links.
+	 *
+	 * @var string
+	 */
+	private $base_link_file_name = __DIR__ . '/base_links.txt';
+
+	/**
+	 * Allowed IP to run not from CLI (console).
+	 *
+	 * @var string
+	 */
+	private $allowed_ip = '87.110.237.209';
+
 	/**
 	 * Start time.
 	 *
@@ -36,40 +79,11 @@ class Monitor {
 	private $sapi_name;
 
 	/**
-	 * Site url.
-	 *
-	 * @var string
-	 */
-	private $site_url = 'https://swsgroup.ru';
-
-	/**
 	 * Log entries.
 	 *
 	 * @var array
 	 */
 	private $log_array = [];
-
-	/**
-	 * From email address.
-	 *
-	 * @var string
-	 */
-	private $from = 'info@kagg.eu';
-
-	/**
-	 * To email address.
-	 *
-	 * @var string
-	 */
-	private $to = 'info@kagg.eu';
-//	private $to = 'denis.swsgrp@gmail.com, churkin.andrei@mail.ru, info@kagg.eu';
-
-	/**
-	 * Email error level.
-	 *
-	 * @var int
-	 */
-	private $email_level = KM_INFO;
 
 	/**
 	 * Collected links.
@@ -93,13 +107,6 @@ class Monitor {
 	private $diffs = [];
 
 	/**
-	 * Filename containing base links.
-	 *
-	 * @var string
-	 */
-	private $base_link_file_name = __DIR__ . '/base_links.txt';
-
-	/**
 	 * Monitor constructor.
 	 */
 	public function __construct() {
@@ -108,7 +115,7 @@ class Monitor {
 		$this->sapi_name = php_sapi_name();
 
 		if ( 'cli' !== php_sapi_name() ) {
-			if ( '87.110.237.209' !== $this->get_user_ip() ) {
+			if ( $this->allowed_ip !== $this->get_user_ip() ) {
 				$this->log( 'Not allowed.', KM_ERROR );
 				die();
 			}
