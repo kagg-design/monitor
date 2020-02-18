@@ -20,7 +20,30 @@ class Monitor {
 	 *
 	 * @var string
 	 */
-	private $site_url = 'https://swsgroup.ru';
+	private $site_url = 'http://ecosmetics.test';
+
+	/**
+	 * Ignore these urls.
+	 *
+	 * @var array
+	 */
+	private $ignored_urls = [
+		'?add-to-cart',
+	];
+
+	/**
+	 * Ignore urls outside the site.
+	 *
+	 * @var bool
+	 */
+	private $ignore_outer_urls = true;
+
+	/**
+	 * Main menu selector.
+	 *
+	 * @var string
+	 */
+	private $menu_links_selector = '#menu a';
 
 	/**
 	 * From email address.
@@ -56,6 +79,13 @@ class Monitor {
 	 * @var string
 	 */
 	private $allowed_ip = '87.110.237.209';
+
+	/**
+	 * Maximum allowed page loading time.
+	 *
+	 * @var int
+	 */
+	private $max_load_time = 2;
 
 	/**
 	 * Start time.
@@ -123,7 +153,7 @@ class Monitor {
 
 		$this->log( 'Starting checks.' );
 
-		$this->make_checks();
+		$this->check_menu_pages();
 		$this->walk_links();
 
 		$this->log( 'There are ' . count( $this->links ) . ' links on site.', KM_INFO );
@@ -261,9 +291,13 @@ class Monitor {
 	 * @return bool|simple_html_dom
 	 */
 	private function get_html( $url ) {
-		$url = $this->normalize_link( $url );
+		if ( ! $this->add_link( $url ) ) {
+			return false;
+		}
 
-		$this->add_link( $url );
+		if ( in_array( $url, $this->visited, true ) ) {
+			return false;
+		}
 
 		$time_start = microtime( true );
 
@@ -273,6 +307,11 @@ class Monitor {
 		$time     = $time_end - $time_start;
 
 		if ( $html ) {
+			$percent       = 0;
+			$visited_count = count( $this->visited );
+			if ( $visited_count ) {
+				$percent = intval( ( $visited_count + 1 ) / count( $this->links ) * 100 );
+			}
 			$title_node = $html->find( 'title', 0 );
 			/**
 			 * DOM html node.
@@ -281,26 +320,22 @@ class Monitor {
 			 */
 			$title = $title_node ? $title_node->plaintext : '';
 			$this->log(
-				'Checking "' . htmlspecialchars_decode( $title ) .
-				'" page. (' . urldecode( $url ) . ')'
+				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%.'
 			);
 
 			if ( 0 === strpos( $url, $this->site_url ) ) {
-				if ( 1 < $time ) {
+				if ( $this->max_load_time < $time ) {
 					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
 				}
 
 				$a_items = $html->find( 'a' );
 				foreach ( $a_items as $a_item ) {
-					if ( 0 === strpos( $a_item->href, 'http://swsgroup' ) ) {
-						$this->log( 'Unexpected link ' . $a_item->href . ' on page ' . urldecode( $url ), KM_WARNING );
-					}
 					/**
 					 * DOM html node.
 					 *
 					 * @var simple_html_dom_node $a_item
 					 */
-					$this->add_link( $this->normalize_link( $a_item->href ) );
+					$this->add_link( $a_item->href );
 				}
 			}
 
@@ -321,24 +356,38 @@ class Monitor {
 	 */
 	private function file_get_html( $url ) {
 		// Offset must be 0 with php 7.2.
-		$html = file_get_html( $url, false, null, 0 );
-
-		return $html;
+		return file_get_html( $url, false, null, 0 );
 	}
 
 	/**
 	 * Add link.
 	 *
 	 * @param string $url Url.
+	 *
+	 * @return bool
 	 */
 	private function add_link( $url ) {
 		if ( ! $url ) {
-			return;
+			return false;
+		}
+
+		$url = $this->normalize_link( $url );
+
+		if ( $this->ignore_outer_urls && $this->is_outer_url( $url ) ) {
+			return false;
+		}
+
+		foreach ( $this->ignored_urls as $ignored_url ) {
+			if ( false !== strpos( $url, $ignored_url ) ) {
+				return false;
+			}
 		}
 
 		if ( ! in_array( $url, $this->links, true ) ) {
 			$this->links[] = $url;
 		}
+
+		return true;
 	}
 
 	/**
@@ -378,6 +427,17 @@ class Monitor {
 	}
 
 	/**
+	 * Check if url is outside of the site.
+	 *
+	 * @param string $url Url.
+	 *
+	 * @return bool
+	 */
+	private function is_outer_url( $url ) {
+		return parse_url( $this->site_url, PHP_URL_HOST ) !== parse_url( $url, PHP_URL_HOST );
+	}
+
+	/**
 	 * Add visited link.
 	 *
 	 * @param string $url Url.
@@ -393,31 +453,23 @@ class Monitor {
 	}
 
 	/**
-	 * Make all checks.
+	 * Check menu pages.
 	 */
-	private function make_checks() {
-		$this->check_pages( $this->site_url );
-	}
-
-	/**
-	 * Check pages.
-	 *
-	 * @param string $url Url.
-	 */
-	private function check_pages( $url ) {
+	private function check_menu_pages() {
 		// Load start page.
-		$html = $this->get_html( $url );
+		$html = $this->get_html( $this->site_url );
 
 		// Load pages from menu.
 		$this->log( 'Checking pages in menu...' );
-		$menu_items = $html->find( '.mainmenu li a' );
+		$menu_items = $html->find( $this->menu_links_selector );
+		$this->log( 'Found ' . count( $menu_items ) . ' links in menu.' );
 		foreach ( $menu_items as $menu_item ) {
 			/**
 			 * DOM html node.
 			 *
-			 * @var simple_html_dom_node $href
+			 * @var simple_html_dom_node $menu_item
 			 */
-			$this->get_html( $menu_item->href );
+			$this->add_link( $menu_item->href );
 		}
 	}
 
@@ -425,6 +477,8 @@ class Monitor {
 	 * Walk all links.
 	 */
 	private function walk_links() {
+		$this->log( 'Walking on links...' );
+		$this->log( 'Found ' . count( $this->links ) . ' links in total.' );
 		foreach ( $this->links as &$url ) {
 			if ( ! in_array( $url, $this->visited, true ) ) {
 				$this->get_html( $url );
