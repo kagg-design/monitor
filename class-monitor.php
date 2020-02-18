@@ -16,48 +16,35 @@ define( 'KM_ERROR', 3 );
 class Monitor {
 
 	/**
-	 * Site url.
+	 * Name of the file containing filters in json format
 	 *
 	 * @var string
 	 */
-	private $site_url = 'http://ecosmetics.test';
+	private $settings_filename = __DIR__ . '/../monitor.json';
 
 	/**
-	 * Ignore these urls.
+	 * Default settings
+	 * null means that value must be specified in json file.
 	 *
 	 * @var array
 	 */
-	private $ignored_urls = [
-		'?add-to-cart',
+	private $default_settings = [
+		'site_url'            => null,
+		'ignored_urls'        => [],
+		'ignore_outer_urls'   => true,
+		'menu_links_selector' => '',
+		'from'                => null,
+		'to'                  => null,
+		'allowed_ip'          => '',
+		'max_load_time'       => 1,
 	];
 
 	/**
-	 * Ignore urls outside the site.
+	 * Settings
 	 *
-	 * @var bool
+	 * @var array
 	 */
-	private $ignore_outer_urls = true;
-
-	/**
-	 * Main menu selector.
-	 *
-	 * @var string
-	 */
-	private $menu_links_selector = '#menu a';
-
-	/**
-	 * From email address.
-	 *
-	 * @var string
-	 */
-	private $from = 'info@kagg.eu';
-
-	/**
-	 * To email address.
-	 *
-	 * @var string
-	 */
-	private $to = 'info@kagg.eu';
+	private $settings = [];
 
 	/**
 	 * Email error level.
@@ -72,20 +59,6 @@ class Monitor {
 	 * @var string
 	 */
 	private $base_link_file_name = __DIR__ . '/base_links.txt';
-
-	/**
-	 * Allowed IP to run not from CLI (console).
-	 *
-	 * @var string
-	 */
-	private $allowed_ip = '87.110.237.209';
-
-	/**
-	 * Maximum allowed page loading time.
-	 *
-	 * @var int
-	 */
-	private $max_load_time = 2;
 
 	/**
 	 * Start time.
@@ -142,10 +115,12 @@ class Monitor {
 	public function __construct() {
 		$this->time_start = microtime( true );
 
+		$this->settings = $this->load_settings( $this->default_settings );
+
 		$this->sapi_name = php_sapi_name();
 
 		if ( 'cli' !== php_sapi_name() ) {
-			if ( $this->allowed_ip !== $this->get_user_ip() ) {
+			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
 				$this->log( 'Not allowed.', KM_ERROR );
 				die();
 			}
@@ -184,6 +159,48 @@ class Monitor {
 		$this->log( 'Finished.' );
 
 		$this->send_email();
+	}
+
+	/**
+	 * Load settings
+	 *
+	 * @param array $default_settings Default settings.
+	 *
+	 * @return array
+	 */
+	private function load_settings( $default_settings ) {
+		if ( ! is_readable( $this->settings_filename ) ) {
+			throw new \InvalidArgumentException( 'Settings file does not exist.' );
+		}
+
+		// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$settings = file_get_contents( $this->settings_filename );
+		// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+		if ( ! $settings ) {
+			throw new \InvalidArgumentException( 'Settings file is empty.' );
+		}
+
+		$settings = (array) json_decode( $settings, true );
+		$out      = [];
+
+		foreach ( $default_settings as $name => $default_setting ) {
+			if ( array_key_exists( $name, $settings ) ) {
+				$out[ $name ] = $settings[ $name ];
+			} else {
+				$out[ $name ] = $default_setting;
+			}
+		}
+
+		$settings = $out;
+
+		foreach ( $settings as $name => $setting ) {
+			if ( null === $setting ) {
+				throw new \InvalidArgumentException( "'{$name}' must be defined in settings file." );
+			}
+		}
+
+		return $settings;
 	}
 
 	/**
@@ -278,9 +295,9 @@ class Monitor {
 		$headers = 'MIME-Version: 1.0' . "\r\n";
 
 		$headers .= 'Content-Type: text/html; charset=UTF-8' . "\r\n";
-		$headers .= 'From: ' . $this->from . "\r\n";
+		$headers .= 'From: ' . $this->settings['from'] . "\r\n";
 
-		mail( $this->to, 'Report on ' . $this->site_url . ' monitoring.', $message, $headers );
+		mail( $this->settings['to'], 'Report on ' . $this->settings['site_url'] . ' monitoring.', $message, $headers );
 	}
 
 	/**
@@ -323,8 +340,8 @@ class Monitor {
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%.'
 			);
 
-			if ( 0 === strpos( $url, $this->site_url ) ) {
-				if ( $this->max_load_time < $time ) {
+			if ( 0 === strpos( $url, $this->settings['site_url'] ) ) {
+				if ( $this->settings['max_load_time'] < $time ) {
 					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
 				}
 
@@ -373,11 +390,11 @@ class Monitor {
 
 		$url = $this->normalize_link( $url );
 
-		if ( $this->ignore_outer_urls && $this->is_outer_url( $url ) ) {
+		if ( $this->settings['ignore_outer_urls'] && $this->is_outer_url( $url ) ) {
 			return false;
 		}
 
-		foreach ( $this->ignored_urls as $ignored_url ) {
+		foreach ( $this->settings['ignored_urls'] as $ignored_url ) {
 			if ( false !== strpos( $url, $ignored_url ) ) {
 				return false;
 			}
@@ -404,12 +421,12 @@ class Monitor {
 
 		$url_arr = parse_url( $url );
 
-		$scheme = isset( $url_arr['scheme'] ) ? $url_arr['scheme'] : parse_url( $this->site_url, PHP_URL_SCHEME );
+		$scheme = isset( $url_arr['scheme'] ) ? $url_arr['scheme'] : parse_url( $this->settings['site_url'], PHP_URL_SCHEME );
 		if ( 'http' !== $scheme && 'https' !== $scheme ) {
 			return '';
 		}
 
-		$host = isset( $url_arr['host'] ) ? $url_arr['host'] : parse_url( $this->site_url, PHP_URL_HOST );
+		$host = isset( $url_arr['host'] ) ? $url_arr['host'] : parse_url( $this->settings['site_url'], PHP_URL_HOST );
 		$url  = $scheme . '://' . $host;
 
 		if ( isset( $url_arr['port'] ) ) {
@@ -417,7 +434,9 @@ class Monitor {
 		}
 
 		$path = isset( $url_arr['path'] ) ? $url_arr['path'] : '';
-		$url  = $url . $path;
+		$path = rtrim( $path, '/\\' );
+
+		$url = $url . $path;
 
 		if ( isset( $url_arr['query'] ) ) {
 			$url .= '?' . $url_arr['query'];
@@ -434,7 +453,7 @@ class Monitor {
 	 * @return bool
 	 */
 	private function is_outer_url( $url ) {
-		return parse_url( $this->site_url, PHP_URL_HOST ) !== parse_url( $url, PHP_URL_HOST );
+		return parse_url( $this->settings['site_url'], PHP_URL_HOST ) !== parse_url( $url, PHP_URL_HOST );
 	}
 
 	/**
@@ -457,11 +476,15 @@ class Monitor {
 	 */
 	private function check_menu_pages() {
 		// Load start page.
-		$html = $this->get_html( $this->site_url );
+		$html = $this->get_html( $this->normalize_link( $this->settings['site_url'] ) );
+
+		if ( ! $this->settings['menu_links_selector'] ) {
+			return;
+		}
 
 		// Load pages from menu.
 		$this->log( 'Checking pages in menu...' );
-		$menu_items = $html->find( $this->menu_links_selector );
+		$menu_items = $html->find( $this->settings['menu_links_selector'] );
 		$this->log( 'Found ' . count( $menu_items ) . ' links in menu.' );
 		foreach ( $menu_items as $menu_item ) {
 			/**
