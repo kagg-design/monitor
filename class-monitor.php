@@ -110,9 +110,22 @@ class Monitor {
 	private $diffs = [];
 
 	/**
+	 * Total word count.
+	 *
+	 * @var int
+	 */
+	private $total_word_count = 0;
+
+	/**
 	 * Monitor constructor.
 	 */
 	public function __construct() {
+		// Load WP.
+		require_once '../wp-load.php';
+
+		// Load file with word count function.
+		require_once( GTS_INC_DIR . '/admin.php' );
+
 		$this->time_start = microtime( true );
 
 		$this->settings = $this->load_settings( $this->default_settings );
@@ -133,6 +146,7 @@ class Monitor {
 
 		$this->log( 'There are ' . count( $this->links ) . ' links on site.', KM_INFO );
 		$this->log( 'There are ' . count( $this->visited ) . ' visited.', KM_INFO );
+		$this->log( 'Total word count: ' . $this->total_word_count, KM_INFO );
 
 		$diff = array_diff( $this->links, $this->visited );
 		if ( 0 < count( $diff ) ) {
@@ -340,7 +354,16 @@ class Monitor {
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%.'
 			);
 
-			if ( 0 === strpos( $url, $this->settings['site_url'] ) ) {
+			$response = gts_get_url_wordcount( $url, 1000 );
+			if ( $response['status'] ) {
+				$word_count = json_decode( $response['body'] )->wordsNumber;
+				$this->log( $word_count . ' words in ' . $url, KM_INFO );
+				$this->total_word_count += $word_count;
+			} else {
+				$this->log( 'Cannot calculate words in ' . $url, KM_WARNING );
+			}
+
+			if ( ! $this->is_outer_url( $url ) ) {
 				if ( $this->settings['max_load_time'] < $time ) {
 					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
 				}
