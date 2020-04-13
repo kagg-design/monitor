@@ -5,11 +5,11 @@
  * @package kagg-monitor
  */
 
-// Require files and run monitor.
-require_once 'simple_html_dom.php';
-require_once 'class-monitor.php';
-require_once 'class.Diff.php';
+// Load WP.
+require_once '../wp-load.php';
 
-$monitor = new Monitor();
+// Load monitor classes.
+require_once 'monitor-load.php';
 
-die();
+// Run monitor.
+new Monitor();

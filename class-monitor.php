@@ -23,8 +23,8 @@ class Monitor {
 	private $settings_filename = __DIR__ . '/../monitor.json';
 
 	/**
-	 * Default settings
-	 * null means that value must be specified in json file.
+	 * Default settings.
+	 * null means that value must be specified in json file or in settings array passed to the constructor.
 	 *
 	 * @var array
 	 */
@@ -33,10 +33,11 @@ class Monitor {
 		'ignored_urls'        => [],
 		'ignore_outer_urls'   => true,
 		'menu_links_selector' => '',
-		'from'                => null,
-		'to'                  => null,
+		'from'                => '',
+		'to'                  => '',
 		'allowed_ip'          => '',
 		'max_load_time'       => 1,
+		'log_id'              => null,
 	];
 
 	/**
@@ -110,43 +111,39 @@ class Monitor {
 	private $diffs = [];
 
 	/**
-	 * Total word count.
-	 *
-	 * @var int
-	 */
-	private $total_word_count = 0;
-
-	/**
 	 * Monitor constructor.
+	 *
+	 * @param array $settings Settings.
 	 */
-	public function __construct() {
-		// Load WP.
-		require_once '../wp-load.php';
-
-		// Load file with word count function.
-		require_once( GTS_INC_DIR . '/admin.php' );
-
+	public function __construct( $settings = [] ) {
 		$this->time_start = microtime( true );
-
-		$this->settings = $this->load_settings( $this->default_settings );
 
 		$this->sapi_name = php_sapi_name();
 
-		if ( 'cli' !== php_sapi_name() ) {
-			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
-				$this->log( 'Not allowed.', KM_ERROR );
-				die();
-			}
+		$this->default_settings['from'] = get_option( 'admin_email' );
+
+		if ( 'cli' === $this->sapi_name ) {
+			unset( $this->default_settings['log_id'] ); // Not used in cli. So, not require it.
 		}
 
-		$this->log( 'Starting checks.' );
+		$this->settings = $this->load_settings( $settings, $this->default_settings );
+
+		$scheme = parse_url( $this->settings['site_url'], PHP_URL_SCHEME );
+		if ( null === $scheme ) {
+			$this->settings['site_url'] = 'http://' . $this->settings['site_url'];
+		}
+
+		if ( 'cli' !== $this->sapi_name && ! wp_doing_ajax() ) {
+			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
+				throw new \InvalidArgumentException( 'Not allowed.' );
+			}
+		}
 
 		$this->check_menu_pages();
 		$this->walk_links();
 
 		$this->log( 'There are ' . count( $this->links ) . ' links on site.', KM_INFO );
 		$this->log( 'There are ' . count( $this->visited ) . ' visited.', KM_INFO );
-		$this->log( 'Total word count: ' . $this->total_word_count, KM_INFO );
 
 		$diff = array_diff( $this->links, $this->visited );
 		if ( 0 < count( $diff ) ) {
@@ -155,6 +152,8 @@ class Monitor {
 				$this->log( $item, KM_ERROR );
 			}
 		}
+
+		do_action( 'monitor_completed', $this );
 
 		array_filter( $this->links );
 		sort( $this->links, SORT_NATURAL );
@@ -170,7 +169,6 @@ class Monitor {
 
 		$time = $this->time_end - $this->time_start;
 		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', KM_INFO );
-		$this->log( 'Finished.' );
 
 		$this->send_email();
 	}
@@ -178,25 +176,29 @@ class Monitor {
 	/**
 	 * Load settings
 	 *
+	 * @param array $default_settings Settings.
 	 * @param array $default_settings Default settings.
 	 *
 	 * @return array
 	 */
-	private function load_settings( $default_settings ) {
-		if ( ! is_readable( $this->settings_filename ) ) {
-			throw new \InvalidArgumentException( 'Settings file does not exist.' );
+	private function load_settings( $settings, $default_settings ) {
+		if ( empty( $settings ) ) {
+			if ( ! is_readable( $this->settings_filename ) ) {
+				throw new \InvalidArgumentException( 'Settings file does not exist.' );
+			}
+
+			// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$settings = file_get_contents( $this->settings_filename );
+			// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+			if ( ! $settings ) {
+				throw new \InvalidArgumentException( 'Settings file is empty.' );
+			}
+
+			$settings = (array) json_decode( $settings, true );
 		}
 
-		// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-		$settings = file_get_contents( $this->settings_filename );
-		// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-
-		if ( ! $settings ) {
-			throw new \InvalidArgumentException( 'Settings file is empty.' );
-		}
-
-		$settings = (array) json_decode( $settings, true );
-		$out      = [];
+		$out = [];
 
 		foreach ( $default_settings as $name => $default_setting ) {
 			if ( array_key_exists( $name, $settings ) ) {
@@ -210,7 +212,7 @@ class Monitor {
 
 		foreach ( $settings as $name => $setting ) {
 			if ( null === $setting ) {
-				throw new \InvalidArgumentException( "'{$name}' must be defined in settings file." );
+				throw new \InvalidArgumentException( "'{$name}' must be defined in settings." );
 			}
 		}
 
@@ -223,11 +225,13 @@ class Monitor {
 	 * @param string $message Message.
 	 * @param int    $level   Error level.
 	 */
-	private function log( $message, $level = KM_LOG ) {
+	public function log( $message, $level = KM_LOG ) {
 		if ( KM_ERROR === $level ) {
 			$message = '*** ' . $message . ' ***';
 		}
+
 		$message .= "\n";
+
 		if ( 'cli' !== $this->sapi_name ) {
 			$message = nl2br( $message );
 		}
@@ -239,13 +243,21 @@ class Monitor {
 
 		$this->log_array[] = $log_record;
 
-		echo $message;
+		if ( 'cli' === $this->sapi_name ) {
+			echo $message;
+		} else {
+			set_transient( $this->settings['log_id'], $this->log_array, DAY_IN_SECONDS );
+		}
 	}
 
 	/**
 	 * Send email.
 	 */
 	private function send_email() {
+		if ( ! $this->settings['to'] ) {
+			return;
+		}
+
 		ob_start();
 		?>
 		<html>
@@ -311,7 +323,7 @@ class Monitor {
 		$headers .= 'Content-Type: text/html; charset=UTF-8' . "\r\n";
 		$headers .= 'From: ' . $this->settings['from'] . "\r\n";
 
-		mail( $this->settings['to'], 'Report on ' . $this->settings['site_url'] . ' monitoring.', $message, $headers );
+		wp_mail( $this->settings['to'], 'Report on ' . $this->settings['site_url'] . ' monitoring.', $message, $headers );
 	}
 
 	/**
@@ -354,14 +366,7 @@ class Monitor {
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%.'
 			);
 
-			$response = gts_get_url_wordcount( $url, 1000 );
-			if ( $response['status'] ) {
-				$word_count = json_decode( $response['body'] )->wordsNumber;
-				$this->log( $word_count . ' words in ' . $url, KM_INFO );
-				$this->total_word_count += $word_count;
-			} else {
-				$this->log( 'Cannot calculate words in ' . $url, KM_WARNING );
-			}
+			do_action( 'monitor_url', $this, $url );
 
 			if ( ! $this->is_outer_url( $url ) ) {
 				if ( $this->settings['max_load_time'] < $time ) {
@@ -570,7 +575,7 @@ class Monitor {
 		}
 		$this->diffs = $new_diffs;
 
-		if ( ! empty( $this->diffs ) ) {
+		if ( ! empty( $this->diffs ) && 'cli' === $this->sapi_name ) {
 			echo Diff::toString( $this->diffs );
 		}
 	}
