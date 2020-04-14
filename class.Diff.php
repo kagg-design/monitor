@@ -13,6 +13,8 @@ http://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 */
 
+namespace KAGG\Diff;
+
 // A class containing functions for computing diffs and formatting the output.
 class Diff{
 
@@ -382,5 +384,3 @@ class Diff{
   }
 
 }
-
-?>

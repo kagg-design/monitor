@@ -5,6 +5,13 @@
  * @package kagg-monitor
  */
 
+namespace KAGG\Monitor;
+
+use function KAGG\SimpleHTMLDOM\file_get_html;
+use KAGG\SimpleHTMLDOM\simple_html_dom;
+use KAGG\SimpleHTMLDOM\simple_html_dom_node;
+use KAGG\Diff\Diff;
+
 define( 'KM_LOG', 0 );
 define( 'KM_INFO', 1 );
 define( 'KM_WARNING', 2 );

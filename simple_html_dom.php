@@ -21,6 +21,8 @@
  * Version Rev. 1.9.1 (291)
  */
 
+namespace KAGG\SimpleHTMLDOM;
+
 define('HDOM_TYPE_ELEMENT', 1);
 define('HDOM_TYPE_COMMENT', 2);
 define('HDOM_TYPE_TEXT', 3);
