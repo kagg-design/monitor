@@ -76,7 +76,7 @@ function file_get_html(
 	 * For sourceforge users: uncomment the next line and comment the
 	 * retrieve_url_contents line 2 lines down if it is not already done.
 	 */
-	$contents = file_get_contents(
+	$contents = @file_get_contents(
 		$url,
 		$use_include_path,
 		$context,
