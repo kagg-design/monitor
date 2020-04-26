@@ -16,6 +16,9 @@
   "autoload": {
     "classmap": [
       "classes"
+    ],
+    "files": [
+      "classes/simple_html_dom.php"
     ]
   }
 }
