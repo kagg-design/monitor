@@ -1,0 +1,21 @@
+{
+  "name": "kagg-design/monitor",
+  "description": "Monitor library",
+  "minimum-stability": "dev",
+  "license": "GPL-2.0",
+  "authors": [
+    {
+      "name": "KAGG Design",
+      "email": "info@kagg.eu",
+      "homepage": "https://kagg.eu/en/"
+    }
+  ],
+  "require": {
+    "composer/installers": "^1.9"
+  },
+  "autoload": {
+    "classmap": [
+      "app/classes"
+    ]
+  }
+}

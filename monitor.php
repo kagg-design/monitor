@@ -5,11 +5,12 @@
  * @package kagg-monitor
  */
 
+use KAGG\Monitor\Monitor;
+
 // Load WP.
 require_once '../wp-load.php';
 
-// Load monitor classes.
-require_once 'monitor-load.php';
+require_once '';
 
 // Run monitor.
 new Monitor();
