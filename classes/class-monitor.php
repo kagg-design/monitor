@@ -370,7 +370,10 @@ class Monitor {
 			 */
 			$title = $title_node ? $title_node->plaintext : '';
 			$this->log(
-				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '% ' . round( $time_end - $this->time_start, 3 ) . ' sec.'
+				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
+			);
+			$this->log(
+				'Memory used: ' . memory_get_usage( true ) . ' Total time spent: ' . round( $time_end - $this->time_start, 3 ) . ' sec.'
 			);
 
 			do_action( 'monitor_url', $this, $url );
