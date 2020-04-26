@@ -374,7 +374,7 @@ class Monitor {
 			);
 			$memory_used = round( memory_get_usage( true ) / 1024 /1024, 0 ) . 'M';
 			$this->log(
-				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 3 ) . ' sec.'
+				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 0 ) . ' sec.'
 			);
 
 			do_action( 'monitor_url', $this, $url );
