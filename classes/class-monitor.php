@@ -372,8 +372,9 @@ class Monitor {
 			$this->log(
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
 			);
+			$memory_used = round( memory_get_usage( true ) / 1024 /1024, 0 ) . 'M';
 			$this->log(
-				'Memory used: ' . memory_get_usage( true ) . ' Total time spent: ' . round( $time_end - $this->time_start, 3 ) . ' sec.'
+				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 3 ) . ' sec.'
 			);
 
 			do_action( 'monitor_url', $this, $url );
