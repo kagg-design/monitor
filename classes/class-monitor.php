@@ -7,7 +7,7 @@
 
 namespace KAGG\Monitor;
 
-use function KAGG\SimpleHTMLDOM\file_get_html;
+use function KAGG\SimpleHTMLDOM\str_get_html;
 use KAGG\SimpleHTMLDOM\simple_html_dom;
 use KAGG\SimpleHTMLDOM\simple_html_dom_node;
 use KAGG\Diff\Diff;
@@ -411,8 +411,13 @@ class Monitor {
 	 * @return bool|simple_html_dom
 	 */
 	private function file_get_html( $url ) {
-		// Offset must be 0 with php 7.2.
-		return file_get_html( $url, false, null, 0 );
+		$response = wp_remote_get( $url );
+		$body = wp_remote_retrieve_body( $response );
+		if ( ! $body ) {
+			return false;
+		}
+
+		return str_get_html( $body );
 	}
 
 	/**
