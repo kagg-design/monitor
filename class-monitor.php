@@ -87,7 +87,7 @@ class Monitor {
 	 *
 	 * @var string
 	 */
-	private $to = 'likhoman.maria@yandex.ru, smirnov@swsgroup.ru, maksim@gmgr.ru, lav.ru@inbox.ru, yury.ch59@mail.ru, ivansamarin7@gmail.com, mailto:ac@swsgroup.ru, info@kagg.eu';
+	private $to = 'likhoman.maria@yandex.ru, smirnov@swsgroup.ru, maksim@gmgr.ru, lav.ru@inbox.ru, yury.ch59@mail.ru, ivansamarin7@gmail.com, ac@swsgroup.ru, info@kagg.eu';
 
 	/**
 	 * To email address in debug mode.
