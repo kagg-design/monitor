@@ -377,7 +377,7 @@ class Monitor {
 				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 0 ) . ' sec.'
 			);
 
-			do_action( 'monitor_url', $this, $url );
+			do_action( 'monitor_process_url', $this, $url );
 
 			if ( ! $this->is_outer_url( $url ) ) {
 				if ( $this->settings['max_load_time'] < $time ) {
