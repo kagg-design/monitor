@@ -130,6 +130,7 @@ class Monitor {
 	 */
 	public function __construct() {
 		$this->background_process = new Background_Process( $this );
+		$this->sapi_name = php_sapi_name();
 	}
 
 	/**
@@ -139,8 +140,6 @@ class Monitor {
 	 */
 	public function run( $settings = [] ) {
 		$this->time_start = microtime( true );
-
-		$this->sapi_name = php_sapi_name();
 
 		$this->default_settings['from'] = get_option( 'admin_email' );
 
@@ -183,10 +182,12 @@ class Monitor {
 
 		do_action( 'monitor_completed', $this );
 
-		array_filter( $this->links );
-		sort( $this->links, SORT_NATURAL );
-		$this->maybe_create_base_link_file();
-		$this->diff_links();
+		if ( 'cli' === $this->sapi_name ) {
+			array_filter( $this->links );
+			sort( $this->links, SORT_NATURAL );
+			$this->maybe_create_base_link_file();
+			$this->diff_links();
+		}
 
 		$this->time_end = microtime( true );
 
@@ -250,9 +251,25 @@ class Monitor {
 	 * Save object data.
 	 */
 	private function save_data() {
+		$keys = [
+			'settings',
+			'email_level',
+			'time_start',
+			'time_end',
+			'log_array',
+			'links',
+			'visited',
+			'diffs',
+		];
+		$data = [];
+
+		foreach ( $keys as $key ) {
+			$data[ $key ] = $this->{$key};
+		}
+
 		set_transient(
 			$this->settings['log_id'],
-			get_object_vars($this),
+			$data,
 			DAY_IN_SECONDS
 		);
 	}
@@ -591,12 +608,20 @@ class Monitor {
 		$this->log( 'Walking on links...' );
 		$this->log( 'Found ' . count( $this->links ) . ' links in total.' );
 		foreach ( $this->links as &$url ) {
-			if ( ! $this->is_visited( $url ) ) {
+			if ( $this->is_visited( $url ) ) {
+				continue;
+			}
+
+			if ( 'cli' === $this->sapi_name ) {
+				$this->get_html( $url );
+			} else {
 				$this->background_process->push_to_queue( $url );
 			}
 		}
 
-		$this->background_process->save()->dispatch();
+		if ( 'cli' !== $this->sapi_name ) {
+			$this->background_process->save()->dispatch();
+		}
 	}
 
 	/**
