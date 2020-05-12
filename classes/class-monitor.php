@@ -2,11 +2,12 @@
 /**
  * Monitor class file.
  *
- * @package kagg-monitor
+ * @package KAGG\Monitor
  */
 
 namespace KAGG\Monitor;
 
+use InvalidArgumentException;
 use function KAGG\SimpleHTMLDOM\str_get_html;
 use KAGG\SimpleHTMLDOM\simple_html_dom;
 use KAGG\SimpleHTMLDOM\simple_html_dom_node;
@@ -69,6 +70,13 @@ class Monitor {
 	private $base_link_file_name = __DIR__ . '/base_links.txt';
 
 	/**
+	 * Background process.
+	 *
+	 * @var Background_Process
+	 */
+	private $background_process;
+
+	/**
 	 * Start time.
 	 *
 	 * @var mixed
@@ -119,10 +127,17 @@ class Monitor {
 
 	/**
 	 * Monitor constructor.
-	 *
-	 * @param array $settings Settings.
 	 */
-	public function __construct( $settings = [] ) {
+	public function __construct() {
+		$this->background_process = new Background_Process( $this );
+	}
+
+	/**
+	 * Run monitor.
+	 *
+	 * @param array $settings
+	 */
+	public function run( $settings = [] ) {
 		$this->time_start = microtime( true );
 
 		$this->sapi_name = php_sapi_name();
@@ -134,6 +149,7 @@ class Monitor {
 		}
 
 		$this->settings = $this->load_settings( $settings, $this->default_settings );
+		$this->save_data();
 
 		$scheme = parse_url( $this->settings['site_url'], PHP_URL_SCHEME );
 		if ( null === $scheme ) {
@@ -142,13 +158,18 @@ class Monitor {
 
 		if ( 'cli' !== $this->sapi_name && ! wp_doing_ajax() ) {
 			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
-				throw new \InvalidArgumentException( 'Not allowed.' );
+				throw new InvalidArgumentException( 'Not allowed.' );
 			}
 		}
 
 		$this->check_menu_pages();
 		$this->walk_links();
+	}
 
+	/**
+	 * Complete monitor.
+	 */
+	public function complete() {
 		$this->log( 'There are ' . count( $this->links ) . ' links on site.', KM_INFO );
 		$this->log( 'There are ' . count( $this->visited ) . ' visited.', KM_INFO );
 
@@ -166,12 +187,7 @@ class Monitor {
 		sort( $this->links, SORT_NATURAL );
 		$this->maybe_create_base_link_file();
 		$this->diff_links();
-	}
 
-	/**
-	 * Monitor destructor.
-	 */
-	public function __destruct() {
 		$this->time_end = microtime( true );
 
 		$time = $this->time_end - $this->time_start;
@@ -180,10 +196,14 @@ class Monitor {
 		$this->send_email();
 	}
 
+	public function log_id() {
+		return $this->settings['log_id'];
+	}
+
 	/**
 	 * Load settings
 	 *
-	 * @param array $default_settings Settings.
+	 * @param array $settings         Settings.
 	 * @param array $default_settings Default settings.
 	 *
 	 * @return array
@@ -191,7 +211,7 @@ class Monitor {
 	private function load_settings( $settings, $default_settings ) {
 		if ( empty( $settings ) ) {
 			if ( ! is_readable( $this->settings_filename ) ) {
-				throw new \InvalidArgumentException( 'Settings file does not exist.' );
+				throw new InvalidArgumentException( 'Settings file does not exist.' );
 			}
 
 			// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
@@ -199,7 +219,7 @@ class Monitor {
 			// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 
 			if ( ! $settings ) {
-				throw new \InvalidArgumentException( 'Settings file is empty.' );
+				throw new InvalidArgumentException( 'Settings file is empty.' );
 			}
 
 			$settings = (array) json_decode( $settings, true );
@@ -219,11 +239,35 @@ class Monitor {
 
 		foreach ( $settings as $name => $setting ) {
 			if ( null === $setting ) {
-				throw new \InvalidArgumentException( "'{$name}' must be defined in settings." );
+				throw new InvalidArgumentException( "'{$name}' must be defined in settings." );
 			}
 		}
 
 		return $settings;
+	}
+
+	/**
+	 * Save object data.
+	 */
+	private function save_data() {
+		set_transient(
+			$this->settings['log_id'],
+			get_object_vars($this),
+			DAY_IN_SECONDS
+		);
+	}
+
+	/**
+	 * Get saved data.
+	 *
+	 * @param string $log_id Log id.
+	 */
+	public function get_data( $log_id ) {
+		$data = get_transient( $log_id );
+
+		foreach ( $data as $key => $value ) {
+			$this->{$key} = $value;
+		}
 	}
 
 	/**
@@ -253,7 +297,7 @@ class Monitor {
 		if ( 'cli' === $this->sapi_name ) {
 			echo $message;
 		} else {
-			set_transient( $this->settings['log_id'], $this->log_array, DAY_IN_SECONDS );
+			$this->save_data();
 		}
 	}
 
@@ -340,12 +384,12 @@ class Monitor {
 	 *
 	 * @return bool|simple_html_dom
 	 */
-	private function get_html( $url ) {
+	public function get_html( $url ) {
 		if ( ! $this->add_link( $url ) ) {
 			return false;
 		}
 
-		if ( in_array( $url, $this->visited, true ) ) {
+		if ( $this->is_visited( $url ) ) {
 			return false;
 		}
 
@@ -510,7 +554,7 @@ class Monitor {
 			return;
 		}
 
-		if ( ! in_array( $url, $this->visited, true ) ) {
+		if ( ! $this->is_visited( $url ) ) {
 			$this->visited[] = $url;
 		}
 	}
@@ -547,10 +591,23 @@ class Monitor {
 		$this->log( 'Walking on links...' );
 		$this->log( 'Found ' . count( $this->links ) . ' links in total.' );
 		foreach ( $this->links as &$url ) {
-			if ( ! in_array( $url, $this->visited, true ) ) {
-				$this->get_html( $url );
+			if ( ! $this->is_visited( $url ) ) {
+				$this->background_process->push_to_queue( $url );
 			}
 		}
+
+		$this->background_process->save()->dispatch();
+	}
+
+	/**
+	 * Check if url is already visited.
+	 *
+	 * @param string $url Url.
+	 *
+	 * @return bool
+	 */
+	private function is_visited( $url ) {
+		return in_array( $url, $this->visited, true );
 	}
 
 	/**

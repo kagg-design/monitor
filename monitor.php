@@ -2,7 +2,7 @@
 /**
  * Monitor main file.
  *
- * @package kagg-monitor
+ * @package KAGG\Monitor
  */
 
 use KAGG\Monitor\Monitor;
