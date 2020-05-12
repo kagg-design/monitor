@@ -19,14 +19,14 @@ class Background_Process extends WP_Background_Process {
 	 *
 	 * @var string
 	 */
-	protected $prefix;
+	protected $prefix = 'KAGG_MONITOR_PREFIX';
 
 	/**
 	 * Process action name
 	 *
 	 * @var string
 	 */
-	protected $action;
+	protected $action = 'KAGG_MONITOR_ACTION';
 
 	/**
 	 * Monitor main class
@@ -41,9 +41,7 @@ class Background_Process extends WP_Background_Process {
 	 * @param Monitor $monitor Monitor main class.
 	 */
 	public function __construct( $monitor ) {
-		$this->monitor   = $monitor;
-		$this->prefix = constant( 'KAGG_MONITOR_PREFIX' );
-		$this->action = constant( 'KAGG_MONITOR_ACTION' );
+		$this->monitor = $monitor;
 
 		parent::__construct();
 	}
