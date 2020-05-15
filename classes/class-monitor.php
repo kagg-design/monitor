@@ -136,7 +136,9 @@ class Monitor {
 	/**
 	 * Run monitor.
 	 *
-	 * @param array $settings
+	 * @param array $settings Settings.
+	 *
+	 * @return string Data key.
 	 */
 	public function run( $settings = [] ) {
 		$this->time_start = microtime( true );
@@ -148,7 +150,6 @@ class Monitor {
 		}
 
 		$this->settings = $this->load_settings( $settings, $this->default_settings );
-		$this->save_data();
 
 		$scheme = parse_url( $this->settings['site_url'], PHP_URL_SCHEME );
 		if ( null === $scheme ) {
@@ -163,6 +164,8 @@ class Monitor {
 
 		$this->check_menu_pages();
 		$this->walk_links();
+
+		return $this->data_key();
 	}
 
 	/**
@@ -180,13 +183,13 @@ class Monitor {
 			}
 		}
 
-		do_action( 'monitor_completed', $this );
-
 		if ( 'cli' === $this->sapi_name ) {
 			array_filter( $this->links );
 			sort( $this->links, SORT_NATURAL );
 			$this->maybe_create_base_link_file();
 			$this->diff_links();
+		} else {
+			do_action( 'monitor_completed', $this );
 		}
 
 		$this->time_end = microtime( true );
@@ -248,9 +251,29 @@ class Monitor {
 	}
 
 	/**
+	 * Get data key.
+	 *
+	 * @return string
+	 */
+	public function data_key() {
+		return $this->background_process->data_key();
+	}
+
+	/**
+	 * Get object data.
+	 */
+	public function get_data() {
+		$data = get_site_option( $this->data_key() );
+
+		foreach ( $data as $key => $value ) {
+			$this->{$key} = $value;
+		}
+	}
+
+	/**
 	 * Save object data.
 	 */
-	private function save_data() {
+	public function save_data() {
 		$keys = [
 			'settings',
 			'email_level',
@@ -267,24 +290,7 @@ class Monitor {
 			$data[ $key ] = $this->{$key};
 		}
 
-		set_transient(
-			$this->settings['log_id'],
-			$data,
-			DAY_IN_SECONDS
-		);
-	}
-
-	/**
-	 * Get saved data.
-	 *
-	 * @param string $log_id Log id.
-	 */
-	public function get_data( $log_id ) {
-		$data = get_transient( $log_id );
-
-		foreach ( $data as $key => $value ) {
-			$this->{$key} = $value;
-		}
+		update_site_option( $this->data_key(), $data );
 	}
 
 	/**
@@ -313,8 +319,6 @@ class Monitor {
 
 		if ( 'cli' === $this->sapi_name ) {
 			echo $message;
-		} else {
-			$this->save_data();
 		}
 	}
 
@@ -417,6 +421,8 @@ class Monitor {
 		$time_end = microtime( true );
 		$time     = $time_end - $time_start;
 
+		$new_links = [];
+
 		if ( $html ) {
 			$percent       = 0;
 			$visited_count = count( $this->visited );
@@ -433,32 +439,44 @@ class Monitor {
 			$this->log(
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
 			);
-			$memory_used = round( memory_get_usage( true ) / 1024 /1024, 0 ) . 'M';
-			$this->log(
-				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 0 ) . ' sec.'
-			);
 
-			do_action( 'monitor_process_url', $this, $url );
-
-			if ( ! $this->is_outer_url( $url ) ) {
-				if ( $this->settings['max_load_time'] < $time ) {
-					$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
-				}
-
-				$a_items = $html->find( 'a' );
-				foreach ( $a_items as $a_item ) {
-					/**
-					 * DOM html node.
-					 *
-					 * @var simple_html_dom_node $a_item
-					 */
-					$this->add_link( $a_item->href );
-				}
+			if ( 'cli' !== $this->sapi_name ) {
+				do_action( 'monitor_process_url', $this, $url );
 			}
 
 			$this->add_visited( $url );
+
+			if ( $this->settings['max_load_time'] < $time ) {
+				$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
+			}
+
+			$a_items = $html->find( 'a' );
+			foreach ( $a_items as $a_item ) {
+				/**
+				 * DOM html node.
+				 *
+				 * @var simple_html_dom_node $a_item
+				 */
+				$new_link = $a_item->href;
+
+				if ( $this->is_visited( $new_link ) ) {
+					continue;
+				}
+
+				if ( $this->add_link( $new_link ) ) {
+					$new_links[] = $new_links;
+				}
+			}
 		} else {
 			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
+		}
+
+		if ( $new_links && 'cli' !== $this->sapi_name ) {
+			foreach ( $new_links as $new_link ) {
+//				$this->background_process->push_to_queue( $new_link );
+			}
+
+//			$this->background_process->save();
 		}
 
 		return $html;
@@ -472,8 +490,12 @@ class Monitor {
 	 * @return bool|simple_html_dom
 	 */
 	private function file_get_html( $url ) {
-		$response = wp_remote_get( $url );
-		$body = wp_remote_retrieve_body( $response );
+		$args     = [
+			'timeout'     => 10,
+			'redirection' => 5,
+		];
+		$response = wp_remote_get( $url, $args );
+		$body     = wp_remote_retrieve_body( $response );
 		if ( ! $body ) {
 			return false;
 		}

@@ -1,0 +1,9 @@
+{
+  "site_url": "http://test3.kagg.eu",
+  "ignored_urls": [
+    "?add-to-cart"
+  ],
+  "ignore_outer_urls": true,
+  "from": "info@kagg.eu",
+  "to": "info@kagg.eu"
+}
