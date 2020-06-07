@@ -53,7 +53,38 @@ class Background_Process extends WP_Background_Process {
 	 * @return string
 	 */
 	public function data_key() {
-		return str_replace( '_batch_', '_data_', $this->key );
+		return preg_replace( '/^(.+)_batch_(?:.+)_(.+)$/', '$1_data_$2', $this->key );
+	}
+
+	/**
+	 * Save queue
+	 *
+	 * @return \WP_Background_Process
+	 */
+	public function save() {
+		$save = parent::save();
+
+		// Key will be generated and stored on parent::save.
+		$this->monitor->save_data();
+
+		return $save;
+	}
+
+	/**
+	 * Update queue
+	 *
+	 * @param string $key  Key.
+	 * @param array  $data Data.
+	 *
+	 * @return \WP_Background_Process
+	 */
+	public function update( $key, $data ) {
+		$update = parent::update( $key, $data );
+
+		$this->key = $key;
+		$this->monitor->save_data();
+
+		return $update;
 	}
 
 	/**
@@ -67,9 +98,7 @@ class Background_Process extends WP_Background_Process {
 	 * @return string
 	 */
 	protected function generate_key( $length = 64 ) {
-		$this->key = parent::generate_key();
-
-		$this->monitor->save_data();
+		$this->key = parent::generate_key( $length ) . '_' . substr( $this->monitor->log_id(), 0, 31 );
 
 		return $this->key;
 	}
@@ -108,11 +137,13 @@ class Background_Process extends WP_Background_Process {
 	protected function complete() {
 		parent::complete();
 
+		$this->monitor->save_data();
 		$this->monitor->complete();
 		$this->monitor->save_data();
 	}
 
 	// phpcs:disable Generic.CodeAnalysis.UselessOverridingMethod.Found
+
 	/**
 	 * Is process running
 	 *
@@ -129,12 +160,13 @@ class Background_Process extends WP_Background_Process {
 	 *
 	 * @param string $key Key.
 	 *
-	 * @return $this
+	 * @return \WP_Background_Process
 	 */
 	public function delete( $key ) {
-		parent::delete( $key );
-		delete_site_option( $this->data_key() );
+		$delete = parent::delete( $key );
 
-		return $this;
+		$this->key = $key;
+
+		return $delete;
 	}
 }

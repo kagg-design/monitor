@@ -129,8 +129,14 @@ class Monitor {
 	 * Monitor constructor.
 	 */
 	public function __construct() {
-		$this->background_process = new Background_Process( $this );
 		$this->sapi_name = php_sapi_name();
+
+		if ( 'cli' === $this->sapi_name && ! did_action( 'wp_loaded' ) ) {
+			// Do not init monitor in theme or plugins in cli mode.
+			return;
+		}
+
+		$this->background_process = new Background_Process( $this );
 	}
 
 	/**
@@ -146,7 +152,7 @@ class Monitor {
 		$this->default_settings['from'] = get_option( 'admin_email' );
 
 		if ( 'cli' === $this->sapi_name ) {
-			unset( $this->default_settings['log_id'] ); // Not used in cli. So, not require it.
+			$this->default_settings['log_id'] = 'monitor_cli_' . wp_hash( microtime() );
 		}
 
 		$this->settings = $this->load_settings( $settings, $this->default_settings );
@@ -188,9 +194,9 @@ class Monitor {
 			sort( $this->links, SORT_NATURAL );
 			$this->maybe_create_base_link_file();
 			$this->diff_links();
-		} else {
-			do_action( 'monitor_completed', $this );
 		}
+
+			do_action( 'monitor_completed', $this );
 
 		$this->time_end = microtime( true );
 
@@ -256,6 +262,10 @@ class Monitor {
 	 * @return string
 	 */
 	public function data_key() {
+		if ( 'cli' === $this->sapi_name ) {
+			return $this->log_id();
+		}
+
 		return $this->background_process->data_key();
 	}
 
@@ -302,6 +312,10 @@ class Monitor {
 	public function log( $message, $level = KM_LOG ) {
 		if ( KM_ERROR === $level ) {
 			$message = '*** ' . $message . ' ***';
+		}
+
+		if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+			error_log( $message );
 		}
 
 		$message .= "\n";
@@ -421,63 +435,51 @@ class Monitor {
 		$time_end = microtime( true );
 		$time     = $time_end - $time_start;
 
-		$new_links = [];
+		$old_links = $this->links;
 
-		if ( $html ) {
-			$percent       = 0;
-			$visited_count = count( $this->visited );
-			if ( $visited_count ) {
-				$percent = intval( ( $visited_count + 1 ) / count( $this->links ) * 100 );
-			}
-			$title_node = $html->find( 'title', 0 );
+		if ( ! $html ) {
+			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
+
+			return $html;
+		}
+
+		$percent       = 0;
+		$visited_count = count( $this->visited );
+		if ( $visited_count ) {
+			$percent = intval( ( $visited_count + 1 ) / count( $this->links ) * 100 );
+		}
+		$title_node = $html->find( 'title', 0 );
+		/**
+		 * DOM html node.
+		 *
+		 * @var simple_html_dom_node $title_node
+		 */
+		$title = $title_node ? $title_node->plaintext : '';
+		$this->log(
+			'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
+		);
+
+		$this->add_visited( $url );
+
+		if ( $this->settings['max_load_time'] < $time ) {
+			$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
+		}
+
+		$a_items = $html->find( 'a' );
+		foreach ( $a_items as $a_item ) {
 			/**
 			 * DOM html node.
 			 *
-			 * @var simple_html_dom_node $title_node
+			 * @var simple_html_dom_node $a_item
 			 */
-			$title = $title_node ? $title_node->plaintext : '';
-			$this->log(
-				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
-			);
-
-			if ( 'cli' !== $this->sapi_name ) {
-				do_action( 'monitor_process_url', $this, $url );
-			}
-
-			$this->add_visited( $url );
-
-			if ( $this->settings['max_load_time'] < $time ) {
-				$this->log( 'Slow loading of ' . urldecode( $url ) . ' page. ' . round( $time, 3 ) . ' seconds.', KM_WARNING );
-			}
-
-			$a_items = $html->find( 'a' );
-			foreach ( $a_items as $a_item ) {
-				/**
-				 * DOM html node.
-				 *
-				 * @var simple_html_dom_node $a_item
-				 */
-				$new_link = $a_item->href;
-
-				if ( $this->is_visited( $new_link ) ) {
-					continue;
-				}
-
-				if ( $this->add_link( $new_link ) ) {
-					$new_links[] = $new_links;
-				}
-			}
-		} else {
-			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
+			$this->add_link( $a_item->href );
 		}
 
-		if ( $new_links && 'cli' !== $this->sapi_name ) {
-			foreach ( $new_links as $new_link ) {
-//				$this->background_process->push_to_queue( $new_link );
-			}
-
-//			$this->background_process->save();
+		if ( 'cli' !== $this->sapi_name ) {
+			$this->push_new_links( array_diff( $this->links, $old_links ) );
 		}
+
+		do_action( 'monitor_process_url', $this, $url );
 
 		return $html;
 	}
@@ -503,6 +505,18 @@ class Monitor {
 		return str_get_html( $body );
 	}
 
+	private function push_new_links( $new_links ) {
+		if ( ! $new_links ) {
+			return;
+		}
+
+		foreach ( $new_links as $new_link ) {
+			$this->background_process->push_to_queue( $new_link );
+		}
+
+		$this->background_process->save()->dispatch();
+	}
+
 	/**
 	 * Add link.
 	 *
@@ -516,6 +530,10 @@ class Monitor {
 		}
 
 		$url = $this->normalize_link( $url );
+
+		if ( $this->is_visited( $url ) ) {
+			return false;
+		}
 
 		if ( $this->settings['ignore_outer_urls'] && $this->is_outer_url( $url ) ) {
 			return false;
@@ -636,13 +654,7 @@ class Monitor {
 
 			if ( 'cli' === $this->sapi_name ) {
 				$this->get_html( $url );
-			} else {
-				$this->background_process->push_to_queue( $url );
 			}
-		}
-
-		if ( 'cli' !== $this->sapi_name ) {
-			$this->background_process->save()->dispatch();
 		}
 	}
 
