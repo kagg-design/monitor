@@ -196,7 +196,7 @@ class Monitor {
 			$this->diff_links();
 		}
 
-			do_action( 'monitor_completed', $this );
+		do_action( 'monitor_completed', $this );
 
 		$this->time_end = microtime( true );
 
