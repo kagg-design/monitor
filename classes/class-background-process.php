@@ -45,6 +45,19 @@ class Background_Process extends WP_Background_Process {
 		$this->monitor = $monitor;
 
 		parent::__construct();
+
+		add_filter( $this->identifier . '_cron_interval', [ $this, 'cron_interval' ] );
+	}
+
+	/**
+	 * @param int $interval Cron interval.
+	 *
+	 * @return int
+	 */
+	public function cron_interval( $interval ) {
+
+		// Set cron restart interval to 1 min.
+		return 1;
 	}
 
 	/**
