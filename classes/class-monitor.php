@@ -495,6 +495,7 @@ class Monitor {
 		$args     = [
 			'timeout'     => 10,
 			'redirection' => 5,
+			'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
 		];
 		$response = wp_remote_get( $url, $args );
 		$body     = wp_remote_retrieve_body( $response );
