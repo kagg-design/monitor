@@ -541,7 +541,7 @@ class Monitor {
 		}
 
 		foreach ( $this->settings['ignored_urls'] as $ignored_url ) {
-			if ( false !== strpos( $url, $ignored_url ) ) {
+			if ( 1 === preg_match( '/' . $ignored_url . '/i', $url ) ) {
 				return false;
 			}
 		}
