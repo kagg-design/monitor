@@ -580,7 +580,7 @@ class Monitor {
 		}
 
 		$path = isset( $url_arr['path'] ) ? $url_arr['path'] : '';
-		$path = rtrim( $path, '/\\' );
+		$path = '/' . trim( $path, '/\\' );
 
 		$url = $url . $path;
 
