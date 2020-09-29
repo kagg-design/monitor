@@ -599,7 +599,10 @@ class Monitor {
 	 * @return bool
 	 */
 	private function is_outer_url( $url ) {
-		return parse_url( $this->settings['site_url'], PHP_URL_HOST ) !== parse_url( $url, PHP_URL_HOST );
+		$settings_host = parse_url( $this->settings['site_url'], PHP_URL_HOST );
+		$settings_host = preg_replace( '/^www./i', '', $settings_host );
+		$url_host = parse_url( $url, PHP_URL_HOST );
+		return ! (bool) preg_match( '/^(?:.*\.)?' . $settings_host . '$/i', $url_host );
 	}
 
 	/**
