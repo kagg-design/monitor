@@ -85,13 +85,6 @@ class Monitor {
 	private $time_start;
 
 	/**
-	 * End time.
-	 *
-	 * @var mixed
-	 */
-	private $time_end;
-
-	/**
 	 * SAPI name.
 	 *
 	 * @var string
@@ -120,6 +113,13 @@ class Monitor {
 	private $visited = [];
 
 	/**
+	 * Broken links.
+	 *
+	 * @var array
+	 */
+	private $broken = [];
+
+	/**
 	 * Differences in links.
 	 *
 	 * @var array
@@ -130,7 +130,7 @@ class Monitor {
 	 * Monitor constructor.
 	 */
 	public function __construct() {
-		$this->sapi_name = php_sapi_name();
+		$this->sapi_name = PHP_SAPI;
 
 		if ( 'cli' === $this->sapi_name && ! did_action( 'wp_loaded' ) ) {
 			// Do not init monitor in theme or plugins in cli mode.
@@ -146,7 +146,7 @@ class Monitor {
 	 * @param array $settings Settings.
 	 *
 	 * @return string Data key.
-	 * @throws InvalidArgumentException InvalidArgumentException.
+	 * @throws InvalidArgumentException|JsonException InvalidArgumentException.
 	 */
 	public function run( $settings = [] ) {
 		$this->time_start = microtime( true );
@@ -202,9 +202,9 @@ class Monitor {
 
 		do_action( 'monitor_completed', $this );
 
-		$this->time_end = microtime( true );
+		$time_end = microtime( true );
 
-		$time = $this->time_end - $this->time_start;
+		$time = $time_end - $this->time_start;
 		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', KM_INFO );
 
 		$this->send_email();
@@ -450,6 +450,7 @@ class Monitor {
 
 		if ( ! $html ) {
 			$this->log( 'Cannot load "' . urldecode( $url ) . '" page.', KM_ERROR );
+			$this->add_broken( $url );
 
 			return $html;
 		}
@@ -553,6 +554,10 @@ class Monitor {
 			return false;
 		}
 
+		if ( $this->is_broken( $url ) ) {
+			return false;
+		}
+
 		if ( $this->settings['ignore_outer_urls'] && $this->is_outer_url( $url ) ) {
 			return false;
 		}
@@ -638,6 +643,21 @@ class Monitor {
 	}
 
 	/**
+	 * Add broken link.
+	 *
+	 * @param string $url Url.
+	 */
+	private function add_broken( $url ) {
+		if ( ! $url ) {
+			return;
+		}
+
+		if ( ! $this->is_broken( $url ) ) {
+			$this->broken[] = $url;
+		}
+	}
+
+	/**
 	 * Check menu pages.
 	 */
 	private function check_menu_pages() {
@@ -688,6 +708,17 @@ class Monitor {
 	 */
 	private function is_visited( $url ) {
 		return in_array( $url, $this->visited, true );
+	}
+
+	/**
+	 * Check if url is broken.
+	 *
+	 * @param string $url Url.
+	 *
+	 * @return bool
+	 */
+	private function is_broken( $url ) {
+		return in_array( $url, $this->broken, true );
 	}
 
 	/**

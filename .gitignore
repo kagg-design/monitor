@@ -2,6 +2,6 @@
 .DS_Store
 .idea/
 Thumbs.db
-output/*.*
+output/
 monitor.json
 vendor/
