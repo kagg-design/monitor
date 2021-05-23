@@ -50,6 +50,8 @@ class Background_Process extends WP_Background_Process {
 	}
 
 	/**
+	 * Set cron interval.
+	 *
 	 * @param int $interval Cron interval.
 	 *
 	 * @return int

@@ -8,6 +8,7 @@
 namespace KAGG\Monitor;
 
 use InvalidArgumentException;
+use JsonException;
 use function KAGG\SimpleHTMLDOM\str_get_html;
 use KAGG\SimpleHTMLDOM\simple_html_dom;
 use KAGG\SimpleHTMLDOM\simple_html_dom_node;
@@ -67,7 +68,7 @@ class Monitor {
 	 *
 	 * @var string
 	 */
-	private $base_link_file_name = __DIR__ . '/base_links.txt';
+	private $base_link_file_name = __DIR__ . '/../output/base-links.txt';
 
 	/**
 	 * Background process.
@@ -145,6 +146,7 @@ class Monitor {
 	 * @param array $settings Settings.
 	 *
 	 * @return string Data key.
+	 * @throws InvalidArgumentException InvalidArgumentException.
 	 */
 	public function run( $settings = [] ) {
 		$this->time_start = microtime( true );
@@ -162,10 +164,12 @@ class Monitor {
 			$this->settings['site_url'] = 'http://' . $this->settings['site_url'];
 		}
 
-		if ( 'cli' !== $this->sapi_name && ! wp_doing_ajax() ) {
-			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
-				throw new InvalidArgumentException( 'Not allowed.' );
-			}
+		if (
+			'cli' !== $this->sapi_name &&
+			! wp_doing_ajax() &&
+			$this->settings['allowed_ip'] !== $this->get_user_ip()
+		) {
+			throw new InvalidArgumentException( 'Not allowed.' );
 		}
 
 		$this->check_menu_pages();
@@ -206,6 +210,11 @@ class Monitor {
 		$this->send_email();
 	}
 
+	/**
+	 * Get log id.
+	 *
+	 * @return mixed
+	 */
 	public function log_id() {
 		return $this->settings['log_id'];
 	}
@@ -217,6 +226,7 @@ class Monitor {
 	 * @param array $default_settings Default settings.
 	 *
 	 * @return array
+	 * @throws InvalidArgumentException|JsonException Exception.
 	 */
 	private function load_settings( $settings, $default_settings ) {
 		if ( empty( $settings ) ) {
@@ -225,14 +235,14 @@ class Monitor {
 			}
 
 			// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			$settings = file_get_contents( $this->settings_filename );
+			$settings_json = file_get_contents( $this->settings_filename );
 			// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 
-			if ( ! $settings ) {
+			if ( ! $settings_json ) {
 				throw new InvalidArgumentException( 'Settings file is empty.' );
 			}
 
-			$settings = (array) json_decode( $settings, true );
+			$settings = (array) json_decode( $settings_json, true, 512, JSON_THROW_ON_ERROR );
 		}
 
 		$out = [];
@@ -332,6 +342,7 @@ class Monitor {
 		$this->log_array[] = $log_record;
 
 		if ( 'cli' === $this->sapi_name ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo $message;
 		}
 	}
@@ -446,7 +457,7 @@ class Monitor {
 		$percent       = 0;
 		$visited_count = count( $this->visited );
 		if ( $visited_count ) {
-			$percent = intval( ( $visited_count + 1 ) / count( $this->links ) * 100 );
+			$percent = (int) ( ( $visited_count + 1 ) / count( $this->links ) * 100 );
 		}
 		$title_node = $html->find( 'title', 0 );
 		/**
@@ -492,11 +503,12 @@ class Monitor {
 	 * @return bool|simple_html_dom
 	 */
 	private function file_get_html( $url ) {
-		$args     = [
+		$args = [
 			'timeout'     => 10,
 			'redirection' => 5,
-			'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
+			'user-agent'  => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
 		];
+
 		$response = wp_remote_get( $url, $args );
 		$body     = wp_remote_retrieve_body( $response );
 		if ( ! $body ) {
@@ -506,6 +518,11 @@ class Monitor {
 		return str_get_html( $body );
 	}
 
+	/**
+	 * Push new links into background process.
+	 *
+	 * @param $new_links
+	 */
 	private function push_new_links( $new_links ) {
 		if ( ! $new_links ) {
 			return;
@@ -582,7 +599,7 @@ class Monitor {
 		$path = isset( $url_arr['path'] ) ? $url_arr['path'] : '';
 		$path = '/' . trim( $path, '/\\' );
 
-		$url = $url . $path;
+		$url .= $path;
 
 		if ( isset( $url_arr['query'] ) ) {
 			$url .= '?' . $url_arr['query'];
@@ -712,24 +729,44 @@ class Monitor {
 		$this->diffs = $new_diffs;
 
 		if ( ! empty( $this->diffs ) && 'cli' === $this->sapi_name ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo Diff::toString( $this->diffs );
 		}
 	}
 
 	/**
 	 * Get user IP.
+	 *
+	 * @return string
 	 */
-	private function get_user_ip() {
-		$user_ip = $_SERVER['REMOTE_ADDR'];
+	private function get_user_ip(): string {
+		$vars = [
+			'HTTP_CF_CONNECTING_IP',
+			'HTTP_CLIENT_IP',
+			'HTTP_X_FORWARDED_FOR',
+			'REMOTE_ADDR',
+		];
 
-		if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
-			$user_ip = $_SERVER['HTTP_CF_CONNECTING_IP'];
-		} elseif ( ! empty( $_SERVER['HTTP_CLIENT_IP'] ) ) {
-			$user_ip = $_SERVER['HTTP_CLIENT_IP'];
-		} elseif ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-			$user_ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+		foreach ( $vars as $var ) {
+			$user_ip = $this->get_server_var( $var );
+			if ( ! empty( $user_ip ) ) {
+				return $user_ip;
+			}
 		}
 
 		return $user_ip;
+	}
+
+	/**
+	 * Get server variable.
+	 *
+	 * @param string $var Variable name.
+	 *
+	 * @return string
+	 */
+	private function get_server_var( $var ): string {
+		return isset( $_SERVER[ $var ] ) ?
+			filter_var( wp_unslash( $_SERVER[ $var ] ), FILTER_SANITIZE_STRING ) :
+			'';
 	}
 }
