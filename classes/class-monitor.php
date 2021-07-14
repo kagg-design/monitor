@@ -7,6 +7,7 @@
 
 namespace KAGG\Monitor;
 
+use InvalidArgumentException;
 use function KAGG\SimpleHTMLDOM\str_get_html;
 use KAGG\SimpleHTMLDOM\simple_html_dom;
 use KAGG\SimpleHTMLDOM\simple_html_dom_node;
@@ -45,6 +46,7 @@ class Monitor {
 		'allowed_ip'          => '',
 		'max_load_time'       => 1,
 		'log_id'              => null,
+		'save_content'        => false,
 	];
 
 	/**
@@ -52,7 +54,7 @@ class Monitor {
 	 *
 	 * @var array
 	 */
-	private $settings = [];
+	private $settings;
 
 	/**
 	 * Email error level.
@@ -74,13 +76,6 @@ class Monitor {
 	 * @var mixed
 	 */
 	private $time_start;
-
-	/**
-	 * End time.
-	 *
-	 * @var mixed
-	 */
-	private $time_end;
 
 	/**
 	 * SAPI name.
@@ -121,11 +116,14 @@ class Monitor {
 	 * Monitor constructor.
 	 *
 	 * @param array $settings Settings.
+	 *
+	 * @throws InvalidArgumentException InvalidArgumentException.
+	 * @noinspection HttpUrlsUsage
 	 */
 	public function __construct( $settings = [] ) {
 		$this->time_start = microtime( true );
 
-		$this->sapi_name = php_sapi_name();
+		$this->sapi_name = PHP_SAPI;
 
 		$this->default_settings['from'] = get_option( 'admin_email' );
 
@@ -140,10 +138,8 @@ class Monitor {
 			$this->settings['site_url'] = 'http://' . $this->settings['site_url'];
 		}
 
-		if ( 'cli' !== $this->sapi_name && ! wp_doing_ajax() ) {
-			if ( $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
-				throw new \InvalidArgumentException( 'Not allowed.' );
-			}
+		if ( 'cli' !== $this->sapi_name && ! wp_doing_ajax() && $this->settings['allowed_ip'] !== $this->get_user_ip() ) {
+			throw new InvalidArgumentException( 'Not allowed.' );
 		}
 
 		$this->check_menu_pages();
@@ -172,9 +168,9 @@ class Monitor {
 	 * Monitor destructor.
 	 */
 	public function __destruct() {
-		$this->time_end = microtime( true );
+		$time_end = microtime( true );
 
-		$time = $this->time_end - $this->time_start;
+		$time = $time_end - $this->time_start;
 		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', KM_INFO );
 
 		$this->send_email();
@@ -183,26 +179,26 @@ class Monitor {
 	/**
 	 * Load settings
 	 *
-	 * @param array $default_settings Settings.
+	 * @param array $settings         Settings.
 	 * @param array $default_settings Default settings.
 	 *
 	 * @return array
+	 * @throws InvalidArgumentException InvalidArgumentException.
 	 */
 	private function load_settings( $settings, $default_settings ) {
 		if ( empty( $settings ) ) {
 			if ( ! is_readable( $this->settings_filename ) ) {
-				throw new \InvalidArgumentException( 'Settings file does not exist.' );
+				throw new InvalidArgumentException( 'Settings file does not exist.' );
 			}
 
-			// @phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			$settings = file_get_contents( $this->settings_filename );
-			// @phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$settings_file = file_get_contents( $this->settings_filename );
 
-			if ( ! $settings ) {
-				throw new \InvalidArgumentException( 'Settings file is empty.' );
+			if ( ! $settings_file ) {
+				throw new InvalidArgumentException( 'Settings file is empty.' );
 			}
 
-			$settings = (array) json_decode( $settings, true );
+			$settings = (array) json_decode( $settings_file, true );
 		}
 
 		$out = [];
@@ -219,7 +215,7 @@ class Monitor {
 
 		foreach ( $settings as $name => $setting ) {
 			if ( null === $setting ) {
-				throw new \InvalidArgumentException( "'{$name}' must be defined in settings." );
+				throw new InvalidArgumentException( "'$name' must be defined in settings." );
 			}
 		}
 
@@ -251,7 +247,7 @@ class Monitor {
 		$this->log_array[] = $log_record;
 
 		if ( 'cli' === $this->sapi_name ) {
-			echo $message;
+			echo wp_kses_post( $message );
 		} else {
 			set_transient( $this->settings['log_id'], $this->log_array, DAY_IN_SECONDS );
 		}
@@ -267,8 +263,9 @@ class Monitor {
 
 		ob_start();
 		?>
-		<html>
+		<html lang="en">
 		<head>
+			<title>Monitor results</title>
 			<style>
 				.diff {
 					width: 100%;
@@ -277,7 +274,6 @@ class Monitor {
 				.diff td {
 					width: 50%;
 					vertical-align: top;
-					white-space: pre;
 					white-space: pre-wrap;
 				}
 
@@ -360,7 +356,7 @@ class Monitor {
 			$percent       = 0;
 			$visited_count = count( $this->visited );
 			if ( $visited_count ) {
-				$percent = intval( ( $visited_count + 1 ) / count( $this->links ) * 100 );
+				$percent = (int) ( ( $visited_count + 1 ) / count( $this->links ) * 100 );
 			}
 			$title_node = $html->find( 'title', 0 );
 			/**
@@ -368,13 +364,13 @@ class Monitor {
 			 *
 			 * @var simple_html_dom_node $title_node
 			 */
-			$title = $title_node ? $title_node->plaintext : '';
+			$title = $title_node ? $title_node->text() : '';
 			$this->log(
 				'Checking "' . html_entity_decode( $title ) . '" page (' . urldecode( $url ) . '). ' . $percent . '%'
 			);
-			$memory_used = round( memory_get_usage( true ) / 1024 /1024, 0 ) . 'M';
+			$memory_used = round( memory_get_usage( true ) / 1024 / 1024 ) . 'M';
 			$this->log(
-				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start, 0 ) . ' sec.'
+				'Memory used: ' . $memory_used . '. Total time spent: ' . round( $time_end - $this->time_start ) . ' sec.'
 			);
 
 			do_action( 'monitor_url', $this, $url );
@@ -408,11 +404,11 @@ class Monitor {
 	 *
 	 * @param string $url Url.
 	 *
-	 * @return bool|simple_html_dom
+	 * @return false|simple_html_dom
 	 */
 	private function file_get_html( $url ) {
 		$response = wp_remote_get( $url );
-		$body = wp_remote_retrieve_body( $response );
+		$body     = wp_remote_retrieve_body( $response );
 		if ( ! $body ) {
 			return false;
 		}
@@ -480,7 +476,7 @@ class Monitor {
 		$path = isset( $url_arr['path'] ) ? $url_arr['path'] : '';
 		$path = rtrim( $path, '/\\' );
 
-		$url = $url . $path;
+		$url .= $path;
 
 		if ( isset( $url_arr['query'] ) ) {
 			$url .= '?' . $url_arr['query'];
@@ -546,7 +542,7 @@ class Monitor {
 	private function walk_links() {
 		$this->log( 'Walking on links...' );
 		$this->log( 'Found ' . count( $this->links ) . ' links in total.' );
-		foreach ( $this->links as &$url ) {
+		foreach ( $this->links as $url ) {
 			if ( ! in_array( $url, $this->visited, true ) ) {
 				$this->get_html( $url );
 			}
@@ -559,6 +555,7 @@ class Monitor {
 	private function maybe_create_base_link_file() {
 		if ( ! file_exists( $this->base_link_file_name ) ) {
 			foreach ( $this->links as $link ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_read_file_put_contents
 				file_put_contents( $this->base_link_file_name, $link . "\n", FILE_APPEND );
 			}
 		}
@@ -576,7 +573,9 @@ class Monitor {
 
 		$links = implode( "\n", $this->links );
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		$base_links = file_get_contents( $this->base_link_file_name );
+
 		$base_links = array_filter( explode( "\n", $base_links ) );
 		sort( $base_links, SORT_NATURAL );
 		$base_links = implode( "\n", $base_links );
@@ -592,24 +591,43 @@ class Monitor {
 		$this->diffs = $new_diffs;
 
 		if ( ! empty( $this->diffs ) && 'cli' === $this->sapi_name ) {
-			echo Diff::toString( $this->diffs );
+			echo wp_kses_post( Diff::toString( $this->diffs ) );
 		}
 	}
 
 	/**
 	 * Get user IP.
+	 *
+	 * @return string
 	 */
 	private function get_user_ip() {
-		$user_ip = $_SERVER['REMOTE_ADDR'];
+		$vars = [
+			'HTTP_CF_CONNECTING_IP',
+			'HTTP_CLIENT_IP',
+			'HTTP_X_FORWARDED_FOR',
+			'REMOTE_ADDR',
+		];
 
-		if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
-			$user_ip = $_SERVER['HTTP_CF_CONNECTING_IP'];
-		} elseif ( ! empty( $_SERVER['HTTP_CLIENT_IP'] ) ) {
-			$user_ip = $_SERVER['HTTP_CLIENT_IP'];
-		} elseif ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-			$user_ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+		foreach ( $vars as $var ) {
+			$user_ip = $this->get_server_var( $var );
+			if ( ! empty( $user_ip ) ) {
+				return $user_ip;
+			}
 		}
 
 		return $user_ip;
+	}
+
+	/**
+	 * Get server variable.
+	 *
+	 * @param string $var Variable name.
+	 *
+	 * @return string
+	 */
+	private function get_server_var( $var ) {
+		return isset( $_SERVER[ $var ] ) ?
+			filter_var( wp_unslash( $_SERVER[ $var ] ), FILTER_SANITIZE_STRING ) :
+			'';
 	}
 }
