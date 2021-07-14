@@ -47,6 +47,7 @@ class Monitor {
 		'allowed_ip'          => '',
 		'max_load_time'       => 1,
 		'log_id'              => null,
+		'save_content'        => false,
 	];
 
 	/**
@@ -64,11 +65,18 @@ class Monitor {
 	private $email_level = KM_INFO;
 
 	/**
-	 * Filename containing base links.
+	 * Filename to store base links.
 	 *
 	 * @var string
 	 */
-	private $base_link_file_name = __DIR__ . '/../output/base-links.txt';
+	private $base_link_file_name = KAGG_MONITOR_PATH . '/output/base-links.txt';
+
+	/**
+	 * Directory to store scanned site content.
+	 *
+	 * @var string
+	 */
+	private $content_dir = KAGG_MONITOR_PATH . '/output/content';
 
 	/**
 	 * Background process.
@@ -125,6 +133,13 @@ class Monitor {
 	 * @var array
 	 */
 	private $diffs = [];
+
+	/**
+	 * Html string of the current page.
+	 *
+	 * @var string
+	 */
+	private $html_string;
 
 	/**
 	 * Monitor constructor.
@@ -318,6 +333,8 @@ class Monitor {
 	 *
 	 * @param string $message Message.
 	 * @param int    $level   Error level.
+	 *
+	 * @noinspection ForgottenDebugOutputInspection
 	 */
 	public function log( $message, $level = KM_LOG ) {
 		if ( KM_ERROR === $level ) {
@@ -325,6 +342,7 @@ class Monitor {
 		}
 
 		if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			error_log( $message );
 		}
 
@@ -443,6 +461,8 @@ class Monitor {
 
 		$html = $this->file_get_html( $url );
 
+		$this->maybe_save_content( $url );
+
 		$time_end = microtime( true );
 		$time     = $time_end - $time_start;
 
@@ -497,6 +517,28 @@ class Monitor {
 	}
 
 	/**
+	 * Save content if relevant option is set.
+	 *
+	 * @param string $url Url.
+	 */
+	private function maybe_save_content( $url ): void {
+		if ( ! $this->settings['save_content'] ) {
+			return;
+		}
+
+		$filename = $this->content_dir . wp_parse_url( $url, PHP_URL_PATH ) . '.html';
+		$dirname  = dirname( $filename );
+		if ( ! wp_mkdir_p( $dirname ) ) {
+			$this->log( 'Cannot create directory "' . $dirname . '".', KM_ERROR );
+
+			return;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_read_file_put_contents
+		file_put_contents( $filename, $this->html_string );
+	}
+
+	/**
 	 * Get file html.
 	 *
 	 * @param string $url Url.
@@ -510,13 +552,13 @@ class Monitor {
 			'user-agent'  => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
 		];
 
-		$response = wp_remote_get( $url, $args );
-		$body     = wp_remote_retrieve_body( $response );
-		if ( ! $body ) {
+		$response          = wp_remote_get( $url, $args );
+		$this->html_string = wp_remote_retrieve_body( $response );
+		if ( ! $this->html_string ) {
 			return false;
 		}
 
-		return str_get_html( $body );
+		return str_get_html( $this->html_string );
 	}
 
 	/**
