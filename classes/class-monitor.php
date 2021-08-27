@@ -69,14 +69,14 @@ class Monitor {
 	 *
 	 * @var string
 	 */
-	private $base_link_file_name = KAGG_MONITOR_PATH . '/output/base-links.txt';
+	private $base_link_file_name = __DIR__ . '/../output/base-links.txt';
 
 	/**
 	 * Directory to store scanned site content.
 	 *
 	 * @var string
 	 */
-	private $content_dir = KAGG_MONITOR_PATH . '/output/content';
+	private $content_dir = __DIR__ . '/../output/content';
 
 	/**
 	 * Background process.
