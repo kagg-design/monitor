@@ -7,8 +7,8 @@
 
 namespace KAGG\Monitor;
 
+use KAGG\WP_Background_Processing\WP_Background_Process;
 use stdClass;
-use WP_Background_Process;
 
 /**
  * Class Background_Process
