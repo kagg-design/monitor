@@ -5,6 +5,9 @@
  * @package KAGG\Monitor
  */
 
+// phpcs:ignore Generic.Commenting.DocComment.MissingShort
+/** @noinspection PhpPrivateFieldCanBeLocalVariableInspection */
+
 namespace KAGG\Monitor;
 
 use InvalidArgumentException;
@@ -91,6 +94,13 @@ class Monitor {
 	 * @var mixed
 	 */
 	private $time_start;
+
+	/**
+	 * End time.
+	 *
+	 * @var mixed
+	 */
+	private $time_end;
 
 	/**
 	 * SAPI name.
@@ -217,9 +227,9 @@ class Monitor {
 
 		do_action( 'monitor_completed', $this );
 
-		$time_end = microtime( true );
+		$this->time_end = microtime( true );
 
-		$time = $time_end - $this->time_start;
+		$time = $this->time_end - $this->time_start;
 		$this->log( 'Time elapsed: ' . round( $time, 3 ) . ' seconds.', KM_INFO );
 
 		$this->send_email();
