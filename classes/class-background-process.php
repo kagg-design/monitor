@@ -7,7 +7,7 @@
 
 namespace KAGG\Monitor;
 
-use KAGG\WP_Background_Processing\WP_Background_Process;
+use WP_Background_Process;
 use stdClass;
 
 /**
@@ -108,11 +108,13 @@ class Background_Process extends WP_Background_Process {
 	 * Generates a unique key based on microtime. Queue items are
 	 * given a unique key so that they can be merged upon save.
 	 *
-	 * @param int $length Length.
 	 *
-	 * @return string
+	 * @param int $length
+	 * @param string $key *
+	 *
+* @return string
 	 */
-	protected function generate_key( $length = 64 ) {
+	protected function generate_key( $length = 64, $key = 'batch') {
 		$this->key = parent::generate_key( $length ) . '_' . substr( $this->monitor->log_id(), 0, 31 );
 
 		return $this->key;
@@ -165,8 +167,8 @@ class Background_Process extends WP_Background_Process {
 	 * Check whether the current process is already running
 	 * in a background process.
 	 */
-	public function is_process_running() {
-		return parent::is_process_running();
+	public function is_processing() {
+		return parent::is_processing();
 	}
 	// phpcs:enable Generic.CodeAnalysis.UselessOverridingMethod.Found
 
