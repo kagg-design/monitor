@@ -12,10 +12,10 @@ namespace KAGG\Monitor;
 
 use InvalidArgumentException;
 use JsonException;
-use function KAGG\SimpleHTMLDOM\str_get_html;
 use KAGG\SimpleHTMLDOM\simple_html_dom;
 use KAGG\SimpleHTMLDOM\simple_html_dom_node;
 use KAGG\Diff\Diff;
+use function KAGG\SimpleHTMLDOM\str_get_html;
 
 define( 'KM_LOG', 0 );
 define( 'KM_INFO', 1 );
@@ -849,7 +849,7 @@ class Monitor {
 	 */
 	private function get_server_var( $var ): string {
 		return isset( $_SERVER[ $var ] ) ?
-			filter_var( wp_unslash( $_SERVER[ $var ] ), FILTER_SANITIZE_STRING ) :
+			filter_var( wp_unslash( $_SERVER[ $var ] ), FILTER_SANITIZE_FULL_SPECIAL_CHARS ) :
 			'';
 	}
 }
